@@ -45,7 +45,8 @@ PASSAGE_X1 = 10.7      # passage "ATELIER"
 CEIL_H = 3.0           # sous-face de l'etage
 RIBBON_Z = (4.0, 6.0)  # bandeau vitre de l'etage
 DOOR_H, SECT_H = 2.15, 2.4
-REC = 0.15             # profondeur des vitrages en retrait
+REC = 0.15             # epaisseur du bandeau vitre (> mur : ajoure)
+THRU = 0.3             # profondeur de coupe des ouvertures : traverse le mur (ouvrants ajoures)
 SLAB_Y0, SLAB_T = -1.0, 0.05  # trottoir devant + sol du portique
 
 K = WIDTH_MM / LONG    # mm par metre (750 mm -> echelle 1:26,7)
@@ -63,7 +64,7 @@ Z_LID_HIGH = 7.45                  # couvercles : toit orange + toit gris haut (
 Z_LID_LOW = 4.5                    # couvercle : terrasse + pergola
 ROWS = "ABC"                       # A = avant (orange), C = arriere
 
-OPENINGS = []          # boites des ouvertures (pour garder un mur autour dans la coque)
+OPENINGS = []          # volumes exterieurs en creux (portique, passage) : mur garde autour dans la coque
 
 
 def box(x0, x1, y0, y1, z0, z1):
@@ -115,18 +116,19 @@ def text_cs(txt, height, bold=True):
     return CrossSection(rings, FillRule.EvenOdd), (xmax - xmin) * k
 
 
-def opening(face, a0, a1, z0, z1, depth=REC, panes=1, mull=0.1):
-    """Ouverture en retrait. face = front (y=0), rear (y=DEPTH), left (x=0), right (x=LONG)."""
+def opening(face, a0, a1, z0, z1, panes=1, mull=0.1):
+    """Ouverture ajouree (traverse le mur). face = front (y=0), rear (y=DEPTH), left (x=0), right (x=LONG)."""
+    depth = THRU
     w = (a1 - a0 - mull * (panes - 1)) / panes
     out = []
     for i in range(panes):
         s0 = a0 + i * (w + mull)
         s1 = s0 + w
         out.append({
-            "front": lambda: cutbox(s0, s1, -1, depth, z0, z1),
-            "rear": lambda: cutbox(s0, s1, DEPTH - depth, DEPTH + 1, z0, z1),
-            "left": lambda: cutbox(-1, depth, s0, s1, z0, z1),
-            "right": lambda: cutbox(LONG - depth, LONG + 1, s0, s1, z0, z1),
+            "front": lambda: box(s0, s1, -1, depth, z0, z1),
+            "rear": lambda: box(s0, s1, DEPTH - depth, DEPTH + 1, z0, z1),
+            "left": lambda: box(-1, depth, s0, s1, z0, z1),
+            "right": lambda: box(LONG - depth, LONG + 1, s0, s1, z0, z1),
         }[face]())
     return out
 
@@ -152,13 +154,12 @@ for ang in np.radians([-75, -55, -35]):
     n = np.array([-d[1], d[0]]) * 0.05
     p0, p1 = c + d * (CURVE_R - 1), c + d * (CURVE_R + 1)
     mullions.append(sg.Polygon([p0 - n, p1 - n, p1 + n, p0 + n]))
-ring_keep = extrude(ring.buffer(T), RIBBON_Z[0] - T, RIBBON_Z[1] + T)
 ring = ring.difference(unary_union(mullions))
 cuts.append(extrude(ring, *RIBBON_Z))
 # facade avant : fente vitree, entree vitree (sous l'auvent), porte du fond du passage
 cuts += opening("front", 11.3, 13.2, 1.0, 1.5)
-cuts += opening("front", 14.65, 16.95, 0, 2.7, depth=0.3, panes=3)
-cuts.append(cutbox(PORTICO_X1 + 0.4, PASSAGE_X1 - 0.4, 0, ORANGE_D - 0.15, 0, 2.6))
+cuts += opening("front", 14.65, 16.95, 0, 2.7, panes=3)
+cuts.append(box(PORTICO_X1 + 0.4, PASSAGE_X1 - 0.4, 0, ORANGE_D - 0.02, 0, 2.6))   # porte du fond du passage
 # pignon gauche : grande baie 4 vantaux a l'etage, porte de service
 cuts += opening("left", 0.8, 4.0, 4.0, 6.2, panes=4)
 cuts += opening("left", 3.4, 4.2, 0, DOOR_H)
@@ -181,9 +182,9 @@ for z in np.arange(0.4, TALL_H - 0.3, pitch):
     elif z > LOW_H - 0.25:
         gcuts.append(box(0.2, LONG - 0.2, TALL_Y1 - GD, TALL_Y1 + 0.02, z, z + gh))  # mur terrasse
 # facade arriere (photo 3)
-gcuts += opening("rear", 17.4, 19.6, 0, SECT_H, depth=0.12)             # porte sectionnelle
-gcuts += opening("rear", 14.8, 16.7, 0, SECT_H, depth=0.4)              # porte ouverte
-gcuts += opening("rear", 12.5, 14.4, 0, SECT_H, depth=0.12)             # porte sectionnelle
+gcuts += opening("rear", 17.4, 19.6, 0, SECT_H)             # porte sectionnelle
+gcuts += opening("rear", 14.8, 16.7, 0, SECT_H)              # porte ouverte
+gcuts += opening("rear", 12.5, 14.4, 0, SECT_H)             # porte sectionnelle
 gcuts += opening("rear", 9.8, 11.8, 1.4, 2.1, panes=2)
 gcuts += opening("rear", 7.5, 9.4, 1.4, 2.1, panes=2)
 gcuts += opening("rear", 6.75, 7.55, 0, DOOR_H)
@@ -193,11 +194,11 @@ gcuts += opening("rear", 2.1, 3.0, 1.4, 2.1)
 gcuts += opening("rear", 0.6, 1.6, 0, DOOR_H)
 # pignon droit (photo 4)
 gcuts += opening("right", 5.0, 5.9, 0, DOOR_H)
-gcuts += opening("right", 9.6, 11.5, 0, SECT_H, depth=0.4)
+gcuts += opening("right", 9.6, 11.5, 0, SECT_H)
 gcuts += opening("right", 14.2, 16.1, 1.4, 2.2, panes=2)
 # pignon gauche (photos 2 et 6)
 gcuts += opening("left", 5.0, 5.9, 0, DOOR_H)
-gcuts += opening("left", 9.7, 11.6, 0, SECT_H, depth=0.12)
+gcuts += opening("left", 9.7, 11.6, 0, SECT_H)
 gcuts += opening("left", 11.75, 12.55, 0, DOOR_H)
 gcuts += opening("left", 6.8, 7.3, 5.2, 6.0)
 grey = grey - union(gcuts)
@@ -249,9 +250,9 @@ void = union([
 up_all = foot.buffer(-walls_in, join_style=2)
 bottom = orange_plan.union(up_all.difference(up_all.buffer(-FLANGE, join_style=2)))
 void = void - extrude(bottom, Z_CUT, Z_CUT + PLATE)
-# garder un mur d'epaisseur T autour de chaque ouverture en retrait
+# garder un mur d'epaisseur T autour du portique et du passage
 keep = [box(x0 - T, x1 + T, y0 - T, y1 + T, z0 - T, z1 + T) for x0, x1, y0, y1, z0, z1 in OPENINGS]
-void = void - union(keep + [ring_keep])
+void = void - union(keep)
 full = full - void
 
 
@@ -276,7 +277,9 @@ PLACEMENT = {}   # position de chaque piece dans la maquette assemblee (mm)
 
 def save(man, path):
     mesh = man.to_mesh()
-    tm = trimesh.Trimesh(mesh.vert_properties[:, :3] * K, mesh.tri_verts, process=False)
+    tm = trimesh.Trimesh(mesh.vert_properties[:, :3] * K, mesh.tri_verts, process=True)
+    tm.update_faces(tm.nondegenerate_faces())   # triangles plats -> refuses par certains slicers
+    tm.remove_unreferenced_vertices()
     PLACEMENT[os.path.basename(path)] = tm.bounds[0].round(3).tolist()
     tm.apply_translation(-tm.bounds[0])     # pose sur le plateau, origine au coin
     tm.export(path)
